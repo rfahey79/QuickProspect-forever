@@ -3,6 +3,7 @@ local GetItemInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
 local GetSpellInfo = GetSpellInfo or function(id) return C_Spell.GetSpellName(id) end
 local SPELL_DISENCHANT, SPELL_PROSPECT, SPELL_MILL, SPELL_PICK_LOCK = 13262, 31252, 51005, 1804
 local COLOR_MILL, COLOR_PROSPECT = {0.20,0.55,1}, {0.52,0.22,1}
+local COLOR_COMPREHEND = {1, 0.72, 0.20}
 local COLOR_DISENCHANT, COLOR_LOCKPICK, COLOR_TOO_HIGH = {0.72,0.25,1}, {0.25,0.75,1}, {1,0.08,0.08}
 local ORES = {
     [2770]=20, [2771]=50, [2772]=125, [3858]=175, [10620]=250,
@@ -55,6 +56,34 @@ local function SpellKnown(id)
         if spellName == name then return true end
         index = index + 1
     end
+end
+
+-- Resolve the new spell from the client instead of guessing a beta spell ID.
+local comprehendSpell
+local function ComprehendSpell()
+    if comprehendSpell ~= nil then return comprehendSpell or nil end
+    local name = "Comprehend Scroll"
+    local id
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(name)
+        id = info and info.spellID
+    elseif GetSpellInfo then
+        local _, _, _, _, _, _, spellID = GetSpellInfo(name)
+        id = spellID
+    end
+    if id and SpellKnown(id) then comprehendSpell = id; return id end
+    -- Older spellbooks can resolve a learned spell by name even without an ID.
+    local getName = GetSpellBookItemName or GetSpellName
+    if getName then
+        local index = 1
+        while true do
+            local spellName = getName(index, BOOKTYPE_SPELL or "spell")
+            if not spellName then break end
+            if spellName == name then comprehendSpell = name; return name end
+            index = index + 1
+        end
+    end
+    comprehendSpell = false
 end
 
 -- Read the client's own disenchant lines, including custom non-equipment items.
@@ -162,6 +191,24 @@ local function DisenchantDetails(link, bag, slot)
     return info
 end
 
+local function ComprehensionDetails(lines)
+    local eligible, required, red
+    for _, line in ipairs(lines) do
+        local text = CleanTooltipText(line.text):gsub("%s+", " ")
+        local rank = text:match("^Requires Comprehension %((%d+)%)$")
+        if rank then
+            eligible, required = true, tonumber(rank)
+            red = red or line.red == true
+        end
+        local description = text:lower():gsub('^"', ''):gsub('"$', '')
+        if description == "a mage can decipher this with their comprehension skill." then
+            eligible = true
+        end
+    end
+    local rank = required and ProfessionSkill("Comprehension")
+    return eligible, red or (required and rank and rank < required) or false
+end
+
 local function Classification(link, count, bag, slot)
     local id = ItemID(link)
     if not id then return end
@@ -188,6 +235,15 @@ local function Classification(link, count, bag, slot)
             return "Lockpicking", SPELL_PICK_LOCK, COLOR_TOO_HIGH, true
         end
         return "Lockpicking", SPELL_PICK_LOCK, COLOR_LOCKPICK
+    end
+
+    local scrollSpell = ComprehendSpell()
+    if scrollSpell then
+        local detail = DisenchantDetails(link, bag, slot)
+        local eligible, blocked = ComprehensionDetails(detail.lines)
+        if eligible then
+            return "Comprehension", scrollSpell, blocked and COLOR_TOO_HIGH or COLOR_COMPREHEND, blocked
+        end
     end
 
     if SpellKnown(SPELL_DISENCHANT) then
@@ -231,8 +287,61 @@ if hasShine then
         sparkle:SetHeight(sparkle:GetHeight() * 3)
     end
 end
+-- The 3.3.5 highlight uses enlarged autocast sparkles. Newer clients may
+-- omit the legacy template/functions, so animate the same style ourselves.
+local swirl, shineColor
+if not hasShine then
+    glow:Hide()
+    swirl = CreateFrame("Frame", nil, button)
+    swirl:SetAllPoints(button)
+    swirl:EnableMouse(false)
+    local sparkles, phase = {}, 0
+    for layer = 1, 4 do
+        for corner = 0, 3 do
+            local sparkle = swirl:CreateTexture(nil, "OVERLAY", nil, 7)
+            sparkle:SetTexture("Interface\\Cooldown\\star4")
+            sparkle:SetBlendMode("ADD")
+            sparkle:SetSize((9 - layer * 2) * 3, (9 - layer * 2) * 3)
+            sparkles[#sparkles + 1] = {texture=sparkle, layer=layer, corner=corner}
+        end
+    end
+    swirl.sparkles = sparkles
+    swirl:SetScript("OnUpdate", function(self, elapsed)
+        phase = (phase + elapsed) % 24
+        local width, height = self:GetWidth(), self:GetHeight()
+        local perimeter = 2 * (width + height)
+        if perimeter <= 0 then return end
+        for _, entry in ipairs(sparkles) do
+            local distance = (phase / (2 * entry.layer) + entry.corner / 4) % 1 * perimeter
+            local x, y
+            if distance < width then x, y = distance, 0
+            elseif distance < width + height then x, y = width, width - distance
+            elseif distance < 2 * width + height then x, y = 2 * width + height - distance, -height
+            else x, y = 0, distance - perimeter end
+            entry.texture:ClearAllPoints()
+            entry.texture:SetPoint("CENTER", self, "TOPLEFT", x, y)
+        end
+    end)
+    swirl:SetScript("OnHide", function() phase = 0 end)
+    swirl:Hide()
+end
+local function StartShine(color)
+    -- The item scan runs every 50 ms; do not restart the animation each scan.
+    if shineColor == color then return end
+    shineColor = color
+    if hasShine then
+        AutoCastShine_AutoCastStart(button, color[1], color[2], color[3])
+    else
+        for _, entry in ipairs(swirl.sparkles) do
+            entry.texture:SetVertexColor(color[1], color[2], color[3])
+        end
+        swirl:Show()
+    end
+end
 button:HookScript("OnHide", function(self)
     if hasShine then AutoCastShine_AutoCastStop(self) end
+    if swirl then swirl:Hide() end
+    shineColor = nil
 end)
 local function Print(text)
     DEFAULT_CHAT_FRAME:AddMessage("|cff8f63ffQuickProspect|r " .. text)
@@ -347,8 +456,7 @@ local function Update()
     button.action, button.blocked = action, blocked
     button.detail = detail
     button:Show()
-    if hasShine then AutoCastShine_AutoCastStart(button, color[1], color[2], color[3])
-    else glow:Show() end
+    StartShine(color)
 end
 button:HookScript("OnEnter", function(self)
     if not GameTooltip or not GameTooltip.SetOwner then return end
@@ -383,8 +491,10 @@ frame:RegisterEvent("BAG_UPDATE")
 frame:RegisterEvent("PLAYER_REGEN_ENABLED")
 frame:RegisterEvent("SKILL_LINES_CHANGED")
 frame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+frame:RegisterEvent("SPELLS_CHANGED")
 frame:SetScript("OnEvent", function(_, event)
     ClearDisenchantCache()
+    comprehendSpell = nil
     if event == "PLAYER_LOGIN" then
         QuickProspectDB = QuickProspectDB or {}
         Print("1.1.4-forever loaded. Hold Alt and left-click a highlighted bag item. /qp for status.")
@@ -405,6 +515,7 @@ SlashCmdList.QUICKPROSPECT = function(message)
         if SpellKnown(entry[1]) then known[#known+1] = entry[2] end
     end
     local version, build, _, interface = GetBuildInfo()
+    if ComprehendSpell() then known[#known+1] = "Comprehension" end
     Print(string.format("1.1.4-forever; client %s (%s), interface %s; %s. /qp debug toggles diagnostics.",
         version, build, interface, #known > 0 and table.concat(known, ", ") or "no processing spells learned"))
 end

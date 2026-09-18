@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: QuickProspect
+## Notes: Alt-left-click bag items to prospect, mill, disenchant, or pick locks.
+## Author: Ryan
+## Version: 1.1.4-forever
+## SavedVariables: QuickProspectDB
+
+QuickProspect.lua

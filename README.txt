@@ -1,20 +1,19 @@
 QuickProspect 1.1.4-forever
 Target: Warcraft Forever 1.60.1 build 69913, Interface 16001.
 
-Hold Alt and left-click a highlighted item in Blizzard bags, outside combat.
-Prospecting and milling require at least five items in one physical stack.
-/qp shows version and learned processing spells. /qp debug toggles diagnostics.
+Hold Alt and left-click a highlighted item in Blizzard bags to disenchant it,
+outside combat. /qp shows version and detected spells; /qp debug toggles diagnostics.
 
-This first port retains the 3.3.5 ore, herb, and lockbox lists. Custom server
-items and later expansion materials require additional data. Disenchanting
-first reads the client's tooltip for eligibility and required Enchanting skill,
-including non-equipment quest items. Explicit cannot-disenchant lines override
-the equipment-quality fallback. Unknown skill requirements are labeled unknown;
-the game checks final eligibility. Red highlighting blocks known unmet requirements.
-With /qp debug enabled, unrecognized items print their tooltip text for diagnosis.
-Unknown profession ranks defer eligibility to the game. UniBags-specific
-3.3.5 click hooks are not included; this build targets Blizzard bag buttons.
+The addon checks that Disenchant is learned, then reads the client's item tooltip
+data for disenchant eligibility and required Enchanting skill. Eligible
+non-equipment items, including quest items, are supported. Explicitly ineligible
+items are excluded. When eligibility data is unavailable, uncommon through epic
+armor and weapons are treated as candidates based on item type and quality.
 
-Validated with a mocked Lua environment; actual casting and client-specific
-behavior require in-game testing. Restart the client after first installation
-if QuickProspect does not appear in its addon list.
+Purple highlights indicate disenchanting candidates. Red highlights indicate
+known unmet skill requirements and block the action. Requirements not reported
+by the client remain unknown. The game determines final eligibility.
+
+This addon targets Blizzard bags. Custom items without recognizable eligibility
+data may not be detected. Restart the client after first installation if
+QuickProspect does not appear in its addon list.

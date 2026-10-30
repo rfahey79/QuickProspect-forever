@@ -392,10 +392,18 @@ end
 local target
 local function Hide()
     if InCombatLockdown() then return end
+    if GameTooltip and (GameTooltip:GetOwner() == button or
+        (target and GameTooltip:GetOwner() == target and button:IsShown())) then
+        GameTooltip:Hide()
+    end
     button:Hide()
     target = nil
 end
-button:HookScript("OnLeave", Hide)
+button:HookScript("OnLeave", function(self)
+    -- Reanchoring or tooltip changes can dispatch OnLeave without the cursor
+    -- leaving the item. Only a physical departure should tear down the overlay.
+    if not self:IsMouseOver() then Hide() end
+end)
 local function Update()
     if InCombatLockdown() then return end
     if not IsAltKeyDown() or IsControlKeyDown() or IsShiftKeyDown() then Hide(); return end
@@ -443,9 +451,14 @@ local function Update()
         end
     end
     if not action then Hide(); return end
-    target = owner
-    button:ClearAllPoints()
-    button:SetAllPoints(owner)
+    -- Clearing anchors temporarily removes the overlay from under the cursor,
+    -- causing OnLeave/OnEnter and alternating bag/overlay tooltips every tick.
+    -- Relative anchors already follow the item when its bag frame moves.
+    if target ~= owner then
+        button:ClearAllPoints()
+        button:SetAllPoints(owner)
+        target = owner
+    end
     glow:SetSize(owner:GetWidth() * 1.75, owner:GetHeight() * 1.75)
     glow:SetVertexColor(color[1], color[2], color[3])
     if blocked then button:SetAttribute("alt-type1", nil)
@@ -455,12 +468,18 @@ local function Update()
     button:SetAttribute("target-slot", slot)
     button.action, button.blocked = action, blocked
     button.detail = detail
-    button:Show()
+    if not button:IsShown() then button:Show() end
     StartShine(color)
 end
 button:HookScript("OnEnter", function(self)
-    if not GameTooltip or not GameTooltip.SetOwner then return end
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    if not target or not GameTooltip or not GameTooltip.SetOwner then return end
+    -- Share the bag button's owner and anchor with Blizzard's tooltip updater.
+    -- Giving the overlay its own anchor makes the two handlers move it back
+    -- and forth whenever the bag refreshes its tooltip.
+    if GameTooltip:GetOwner() ~= target then
+        if GameTooltip_SetDefaultAnchor then GameTooltip_SetDefaultAnchor(GameTooltip, target)
+        else GameTooltip:SetOwner(target, "ANCHOR_NONE") end
+    end
     GameTooltip:SetBagItem(self:GetAttribute("target-bag"), self:GetAttribute("target-slot"))
     if self.action == "Disenchanting" then
         local detail = self.detail
@@ -469,8 +488,8 @@ button:HookScript("OnEnter", function(self)
             (detail.rank and (" (yours: " .. detail.rank .. ")") or "")) or
             "QuickProspect: Enchanting requirement not reported by client."
         GameTooltip:AddLine(text, self.blocked and 1 or 0.7, self.blocked and 0.1 or 0.5, self.blocked and 0.1 or 1, true)
-        GameTooltip:Show()
     end
+    GameTooltip:Show()
 end)
 button:HookScript("PostClick", function(self, mouse, down)
     if mouse ~= "LeftButton" or down then return end
@@ -499,7 +518,10 @@ frame:SetScript("OnEvent", function(_, event)
         QuickProspectDB = QuickProspectDB or {}
         Print("1.1.4-forever loaded. Hold Alt and left-click a highlighted bag item. /qp for status.")
     end
-    Hide()
+    -- Tooltip scans can themselves request item data. Hiding on every item-info
+    -- reply produces a scan -> reply -> hide -> re-enter -> scan feedback loop.
+    -- The next hover tick revalidates changed/removed/locked items in place.
+    if event == "PLAYER_LOGIN" or event == "PLAYER_REGEN_ENABLED" then Hide() end
 end)
 SLASH_QUICKPROSPECT1, SLASH_QUICKPROSPECT2 = "/quickprospect", "/qp"
 SlashCmdList.QUICKPROSPECT = function(message)

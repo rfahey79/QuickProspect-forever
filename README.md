@@ -8,6 +8,14 @@ Version **1.1.4-forever** targets client **1.60.1**, build **69913**, interface 
 
 Download or clone this repository, name the addon folder **QuickProspect**, and place it in your client's `Interface/AddOns` directory. `QuickProspect.toc` and `QuickProspect.lua` must be directly inside that folder. Restart the client and enable QuickProspect.
 
+To clone directly from your `Interface/AddOns` directory:
+
+```powershell
+git clone https://github.com/rfahey79/QuickProspect-forever.git QuickProspect
+```
+
+For future updates, run `git pull` inside `QuickProspect`. Local development files under `tests/` are ignored.
+
 ## Usage
 
 Hold **Alt** over an eligible item in Blizzard bags, then left-click to disenchant it. Disenchanting through the addon is disabled during combat.

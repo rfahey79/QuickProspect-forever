@@ -389,6 +389,9 @@ local function Diagnose(text)
         lastDiagnostic = text
     end
 end
+local function IsOverCharacterPane()
+    return CharacterFrame and CharacterFrame:IsVisible() and CharacterFrame:IsMouseOver()
+end
 local target
 local function Hide()
     if InCombatLockdown() then return end
@@ -396,6 +399,7 @@ local function Hide()
         (target and GameTooltip:GetOwner() == target and button:IsShown())) then
         GameTooltip:Hide()
     end
+    button:SetAttribute("alt-type1", nil)
     button:Hide()
     target = nil
 end
@@ -406,7 +410,10 @@ button:HookScript("OnLeave", function(self)
 end)
 local function Update()
     if InCombatLockdown() then return end
-    if not IsAltKeyDown() or IsControlKeyDown() or IsShiftKeyDown() then Hide(); return end
+    if not IsAltKeyDown() or IsControlKeyDown() or IsShiftKeyDown() or IsOverCharacterPane() then
+        Hide()
+        return
+    end
     local owner, bag, slot
     if button:IsShown() and button:IsMouseOver() then
         owner, bag, slot = FindOwner(target)
@@ -490,6 +497,10 @@ button:HookScript("OnEnter", function(self)
         GameTooltip:AddLine(text, self.blocked and 1 or 0.7, self.blocked and 0.1 or 0.5, self.blocked and 0.1 or 1, true)
     end
     GameTooltip:Show()
+end)
+-- The pane can appear over an armed bag overlay between hover updates.
+button:HookScript("PreClick", function()
+    if IsOverCharacterPane() then Hide() end
 end)
 button:HookScript("PostClick", function(self, mouse, down)
     if mouse ~= "LeftButton" or down then return end
